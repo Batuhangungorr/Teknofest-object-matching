@@ -1,28 +1,104 @@
-# TEKNOFEST 2026 - Reference Object Matching
+# TEKNOFEST One-Shot Object Matching Benchmark
 
-Reference Object Matching benchmark and matching engine developed for the TEKNOFEST 2026 Autonomous UAV Competition.
+A modular benchmark framework for evaluating one-shot object matching algorithms on the TEKNOFEST Object Detection Challenge validation dataset.
 
-> **Current Status:** 🚧 Under Development
-
----
-
-# Project Goal
-
-The objective of this project is to detect and localize a given reference object inside aerial video frames.
-
-Unlike traditional object detection, the system receives one or more reference images at runtime and must locate the corresponding object in unseen video frames.
-
-The solution is designed to be:
-
-- Dataset independent
-- Algorithm independent
-- Modular
-- Easily extensible
-- Benchmark-driven
+The project is designed so that **new matching algorithms can be added without modifying the benchmark infrastructure**.
 
 ---
 
-# Current Architecture
+# Project Goals
+
+This project aims to provide a clean and extensible benchmark for evaluating different one-shot object matching approaches such as:
+
+- DINOv2
+- LightGlue
+- LoFTR
+- SuperGlue
+- OpenCV-based methods
+- Future custom algorithms
+
+The benchmark infrastructure is completely independent from any specific algorithm.
+
+---
+
+# Features
+
+- Modular architecture
+- Strategy Pattern based engine system
+- Dependency Injection
+- CVAT XML parser
+- Automatic Validation dataset loader
+- Strongly typed data models
+- Prediction data models
+- Benchmark runner
+- Extensible engine architecture
+- Future-ready metrics module
+- Example DummyEngine for pipeline testing
+
+---
+
+# Project Structure
+
+```text
+Project/
+│
+├── Validation/
+│   ├── ref01/
+│   ├── ref02/
+│   ├── ...
+│   └── ref06/
+│
+└── benchmark/
+    ├── __init__.py
+    ├── data_models.py
+    ├── prediction_models.py
+    ├── loader.py
+    ├── parsers.py
+    ├── engine.py
+    ├── runner.py
+    ├── metrics.py
+    │
+    ├── engines/
+    │   └── coarse_to_fine/
+    │       ├── engine.py
+    │       ├── feature_extractor.py
+    │       ├── localizer.py
+    │       ├── matcher.py
+    │       └── verifier.py
+    │
+    └── examples/
+        ├── dummy_engine.py
+        └── run_dummy_benchmark.py
+```
+
+---
+
+# Architecture
+
+The benchmark follows the Strategy Pattern.
+
+```
+BenchmarkRunner
+        │
+        ▼
+ MatchingEngine (ABC)
+        ▲
+        │
+ ┌──────┼────────────┐
+ │      │            │
+ │      │            │
+DINOv2  LightGlue  LoFTR
+ │
+Custom Engines
+```
+
+The benchmark never depends on a concrete algorithm.
+
+It only communicates with the `MatchingEngine` interface.
+
+---
+
+# Pipeline
 
 ```
 Validation Dataset
@@ -31,159 +107,239 @@ Validation Dataset
 Dataset Loader
         │
         ▼
-CVAT XML Parser
+BenchmarkRunner
         │
         ▼
-Benchmark Runner
+MatchingEngine
         │
         ▼
-Matching Engine
+DetectionPrediction
         │
         ▼
+Metrics (future)
+```
+
+---
+
+# Current Components
+
+## Dataset Loader
+
+Automatically scans
+
+```
+Validation/
+    ref01/
+    ref02/
+    ...
+```
+
+and loads
+
+- reference image
+- Images folder
+- annotations.xml
+
+into Python objects.
+
+---
+
+## Parser
+
+Reads CVAT XML annotations and converts them into
+
+- BoundingBox
+- ImageAnnotation
+
+objects.
+
+---
+
+## MatchingEngine
+
+Abstract interface implemented by every algorithm.
+
+Required methods:
+
+```python
+initialize()
+
+set_reference()
+
+detect()
+
+cleanup()
+```
+
+Future algorithms only need to implement this interface.
+
+---
+
+## BenchmarkRunner
+
+Responsible for
+
+- initializing engine
+- iterating over reference sets
+- running inference
+- collecting predictions
+
+It never performs object matching itself.
+
+---
+
+## Prediction Models
+
+Ground truth and predictions are intentionally separated.
+
+Ground Truth
+
+```
+BoundingBox
+ImageAnnotation
+ReferenceSet
+```
+
 Predictions
+
+```
+DetectionPrediction
+SetPredictions
+BenchmarkPredictions
 ```
 
-The benchmark infrastructure is completely separated from the matching algorithms.
-
-Any future matching algorithm can be integrated by implementing the `MatchingEngine` interface.
+This makes future metric computation much cleaner.
 
 ---
 
-# Project Structure
+## Metrics
 
-```
-Project/
-│
-├── benchmark/
-│   ├── data_models.py
-│   ├── loader.py
-│   ├── parsers.py
-│   ├── prediction_models.py
-│   ├── engine.py
-│   ├── runner.py
-│   └── engines/
-│
-├── Validation/          # Ignored by Git
-│
-├── README.md
-├── requirements.txt
-└── .gitignore
+A placeholder module reserved for future evaluation metrics.
+
+Planned metrics include:
+
+- IoU
+- Precision
+- Recall
+- mAP
+- Success Rate
+- Average Processing Time
+
+---
+
+# Example
+
+```python
+from benchmark.loader import load_validation_dataset
+from benchmark.runner import BenchmarkRunner
+from benchmark.examples.dummy_engine import DummyEngine
+
+dataset = load_validation_dataset("Validation")
+
+engine = DummyEngine()
+
+runner = BenchmarkRunner(
+    engine=engine,
+    dataset=dataset
+)
+
+results = runner.run()
 ```
 
 ---
 
-# Features
+# Planned Engine
 
-- Modular benchmark architecture
-- CVAT XML 1.1 parser
-- Validation dataset loader
-- Matching Engine abstraction
-- Strategy Pattern architecture
-- Dependency Injection
-- Dummy engine for pipeline validation
+The first real implementation will be
 
----
+```
+Coarse-to-Fine Engine
+```
 
-# Planned Features
+Pipeline:
 
-- DINOv2 global descriptors
-- Local feature extraction
-- Geometric verification
-- Confidence estimation
-- IoU evaluation
-- Precision / Recall
-- mAP metrics
-- Runtime benchmarking
+```
+Reference Image
+      │
+      ▼
+Feature Extractor (DINOv2)
+      │
+      ▼
+Coarse Localizer
+      │
+      ▼
+Candidate Region
+      │
+      ▼
+LightGlue Matcher
+      │
+      ▼
+Geometric Verification
+      │
+      ▼
+Bounding Box
+```
 
 ---
 
 # Design Principles
 
-The project follows modern software engineering principles:
-
-- SOLID
 - Strategy Pattern
 - Dependency Injection
-- Separation of Concerns
-- Extensible architecture
-
-The benchmark is completely independent from the matching algorithms.
-
----
-
-# Validation Dataset
-
-Each validation set contains:
-
-- Reference image
-- Test images
-- Ground-truth annotations (CVAT XML)
-
-```
-Validation/
-│
-├── ref01/
-├── ref02/
-├── ref03/
-├── ref04/
-├── ref05/
-└── ref06/
-```
-
-The validation dataset is intentionally excluded from the repository.
+- SOLID Principles
+- Single Responsibility Principle
+- Open/Closed Principle
+- Type-safe Data Models
+- Algorithm-independent Benchmark
 
 ---
 
-# Getting Started
+# Current Status
 
-Clone the repository:
+✅ Dataset Loader
 
-```bash
-git clone <repository-url>
-```
+✅ XML Parser
 
-Install dependencies:
+✅ Data Models
 
-```bash
-pip install -r requirements.txt
-```
+✅ Prediction Models
 
-Run benchmark (coming soon):
+✅ MatchingEngine Interface
 
-```bash
-python run_benchmark.py
-```
+✅ BenchmarkRunner
 
----
+✅ DummyEngine
 
-# Roadmap
+✅ Benchmark Pipeline
 
-- [x] Benchmark architecture
-- [x] Dataset loader
-- [x] XML parser
-- [x] Matching Engine interface
-- [x] Dummy engine
-- [ ] First real Matching Engine
-- [ ] DINOv2 integration
-- [ ] Geometric verification
-- [ ] Evaluation metrics
-- [ ] Performance optimization
+✅ Coarse-to-Fine Skeleton
+
+⬜ DINOv2 Feature Extraction
+
+⬜ Coarse Localization
+
+⬜ LightGlue Matching
+
+⬜ Geometric Verification
+
+⬜ Metrics Implementation
 
 ---
 
-# Technologies
+# Future Roadmap
 
-- Python
-- OpenCV
-- NumPy
-- PyTorch *(planned)*
-- DINOv2 *(planned)*
-- LightGlue *(planned)*
+- DINOv2 integration
+- LightGlue integration
+- TensorRT optimization
+- Jetson deployment
+- IoU & mAP evaluation
+- Visualization utilities
+- Benchmark report generation
+- Multi-engine comparison
+- CLI support
 
 ---
 
 # License
 
-This repository is currently intended for the TEKNOFEST 2026 competition.
-
-```
+This repository is intended for educational and research purposes.

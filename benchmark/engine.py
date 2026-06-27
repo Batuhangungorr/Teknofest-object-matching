@@ -1,26 +1,20 @@
-"""
-benchmark.engine
-=================
+"""benchmark.engine — Soyut esleme motoru arayuzu.
 
-Tüm eşleme algoritmalarının uyması gereken soyut arayüz.
+Strategy Pattern uygulayarak tum esleme algoritmalarinin uyacagi
+kontrati tanimlar.  Benchmark sistemi hicbir zaman somut bir
+algoritmay bilmez — yalnizca bu arayuz uzerinden iletisim kurar.
 
-Bu modül Strategy Pattern'i uygular. Benchmark sistemi hiçbir zaman
-somut bir algoritmayı (DINOv2, LightGlue, LoFTR, SuperGlue, OpenCV vb.)
-bilmez — yalnızca bu arayüz üzerinden iletişim kurar.
+Yasam dongusu::
 
-Yaşam döngüsü:
-    initialize() → N × [set_reference() → M × detect()] → cleanup()
+    initialize(config) -> N x [set_reference() -> M x detect()] -> cleanup()
 
-Context manager protokolü de desteklenir:
+Context manager protokolu de desteklenir::
+
     with engine:
+        engine.initialize(config)
         engine.set_reference(...)
         engine.detect(...)
-
-Yeni bir algoritma eklemek için:
-    1. MatchingEngine'i miras al
-    2. Tüm abstract metotları implemente et
-    3. BenchmarkRunner'a inject et
-    4. Benchmark koduna hiçbir değişiklik gerekmez
+    # cleanup() otomatik cagrilir
 """
 
 from __future__ import annotations
@@ -33,14 +27,15 @@ from benchmark.prediction_models import DetectionPrediction
 
 
 class MatchingEngine(ABC):
-    """Nesne eşleme algoritmalarının soyut temel sınıfı.
+    """Nesne esleme algoritmalarinin soyut temel sinifi.
 
-    Her somut engine bu sınıfı miras alarak tüm abstract metotları
-    implemente etmelidir. Benchmark sistemi yalnızca bu arayüzü bilir.
+    Her somut engine bu sinifi miras alarak tum abstract metotlari
+    implemente etmelidir.  ``BenchmarkRunner`` yalnizca bu arayuzu bilir.
 
-    Typical usage::
+    Example::
 
         class MyEngine(MatchingEngine):
+            @property
             def name(self) -> str:
                 return "MyAlgorithm"
             ...
@@ -51,102 +46,96 @@ class MatchingEngine(ABC):
     """
 
     # ------------------------------------------------------------------
-    # Abstract Interface — alt sınıfların implemente etmesi zorunlu
+    # Abstract interface
     # ------------------------------------------------------------------
 
     @property
     @abstractmethod
     def name(self) -> str:
-        """Algoritmanın insanlar tarafından okunabilir adı.
+        """Algoritmanin insan-tarafindan okunabilir adi.
 
         Returns:
-            Algoritma adı (ör. "DINOv2+LightGlue", "LoFTR", "ORB+BFMatcher").
+            Algoritma adi (or. ``"DINOv2+LightGlue"``).
         """
 
     @abstractmethod
     def initialize(self, config: Optional[Dict[str, Any]] = None) -> None:
-        """Algoritmayı çalışmaya hazırlar.
+        """Algorithmayi calismaya hazirlar.
 
-        Model yükleme, GPU bellek tahsisi, parametre ayarlama gibi
-        tek seferlik hazırlık işlemlerini burada yapın.
+        Model yukleme, GPU bellek tahsisi, parametre ayarlama gibi
+        tek seferlik hazirlak islemlerini burada yapin.
 
         Args:
-            config: Algoritma-spesifik yapılandırma parametreleri.
-                    Örneğin: {"device": "cuda", "threshold": 0.5}
-                    None ise varsayılan ayarlar kullanılmalıdır.
+            config: Algoritma-spesifik yapilandirma parametreleri.
+                ``None`` ise varsayilan ayarlar kullanilmalidir.
         """
 
     @abstractmethod
     def set_reference(self, reference_image_path: Path) -> None:
-        """Referans görselini işler ve belleğe alır.
+        """Referans gorselini isler ve bellege alir.
 
-        Bu metot her yeni referans nesnesi için bir kez çağrılır.
-        Referans feature'larının çıkarılması ve saklanması burada yapılır.
-
-        Performans notu:
-            Referans feature'ları belleğe alınarak, aynı referans için
-            birden fazla test görseli değerlendirilirken tekrar
-            hesaplanmak zorunda kalmaz.
+        Her yeni referans nesnesi icin bir kez cagrilir.  Referans
+        feature'larinin cikarilmasi ve saklanmasi burada yapilir.
 
         Args:
-            reference_image_path: Referans görselinin dosya yolu.
+            reference_image_path: Referans gorselinin dosya yolu.
 
         Raises:
-            FileNotFoundError: Görsel dosyası bulunamazsa.
+            FileNotFoundError: Gorsel dosyasi bulunamazsa.
         """
 
     @abstractmethod
     def detect(self, test_image_path: Path) -> DetectionPrediction:
-        """Test görselinde referans nesnesini arar.
+        """Test gorselinde referans nesnesini arar.
 
-        Daha önce set_reference() ile yüklenen referans nesnesini
-        test görselinde bulmaya çalışır.
+        Daha once ``set_reference()`` ile yuklenen referans nesnesini
+        test gorselinde bulmaya calisir.
 
         Args:
-            test_image_path: Test görselinin dosya yolu.
+            test_image_path: Test gorselinin dosya yolu.
 
         Returns:
-            DetectionPrediction nesnesi. Üç olası durum:
-                - SUCCESS  : Nesne bulundu, predicted_box ve confidence dolu.
-                - NO_MATCH : Nesne bulunamadı.
-                - ERROR    : Beklenmeyen hata oluştu.
+            ``DetectionPrediction`` nesnesi.  Uc olasi durum:
+
+            - ``SUCCESS``  : Nesne bulundu.
+            - ``NO_MATCH`` : Nesne bulunamadi.
+            - ``ERROR``    : Beklenmeyen hata olustu.
 
         Note:
-            Bu metot hiçbir zaman exception fırlatmamalıdır.
-            Hatalar MatchResult.ERROR ile raporlanmalıdır.
+            Bu metot hicbir zaman exception firlatmamalidir.
+            Hatalar ``MatchResult.ERROR`` ile raporlanmalidir.
         """
 
     @abstractmethod
     def cleanup(self) -> None:
-        """Kaynakları serbest bırakır.
+        """Kaynaklari serbest birakir.
 
-        GPU belleği, geçici dosyalar, açık bağlantılar vb.
-        temizleme işlemlerini burada yapın.
+        GPU bellegi, gecici dosyalar, acik baglantilar vb.
+        temizleme islemlerini burada yapin.
 
-        Bu metot idempotent olmalıdır — birden fazla çağrılabilir.
+        Bu metot idempotent olmalidir — birden fazla cagrilabilir.
         """
 
     # ------------------------------------------------------------------
-    # Context Manager Protocol — `with` bloğuyla kullanım
+    # Context manager protocol
     # ------------------------------------------------------------------
 
     def __enter__(self) -> MatchingEngine:
-        """Context manager girişi. Engine'i döndürür.
-
-        Not: initialize() burada otomatik çağrılmaz çünkü config
-        parametresi gerekebilir. Kullanıcı initialize()'ı açıkça
-        çağırmalıdır.
-        """
+        """Context manager girisi.  Engine'i dondurur."""
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager çıkışı. cleanup() çağırır."""
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
+    ) -> None:
+        """Context manager cikisi.  ``cleanup()`` cagrilir."""
         self.cleanup()
-        return None  # Exception'ları yutma
 
     # ------------------------------------------------------------------
-    # Ortak yardımcı metotlar
+    # Yardimci
     # ------------------------------------------------------------------
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self.name!r})"
+        return f"{type(self).__name__}(name={self.name!r})"

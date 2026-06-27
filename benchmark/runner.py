@@ -1,27 +1,20 @@
-"""
-benchmark.runner
-=================
+"""benchmark.runner — Benchmark calistirma orkestratoru.
 
-Benchmark çalıştırma orkestratörü.
+Veri yukleme katmani ile esleme motoru arasindaki kopruyu kurar.
+Kendisi hicbir algoritmayi bilmez ve hicbir metrik hesaplamaz.
 
-Bu modül veri yükleme katmanı ile eşleme motoru arasındaki
-köprüyü kurar. Kendisi hiçbir algoritmayı bilmez ve hiçbir
-metrik hesaplamaz.
+Sorumluluklar:
+    1. Validation setlerini dolasmak.
+    2. ``MatchingEngine``'i dogru sirayla cagirmak.
+    3. ``DetectionPrediction`` nesnelerini toplamak.
+    4. ``BenchmarkPredictions`` dondurmek.
 
-Sorumlulukları:
-    1. Validation setlerini dolaşmak
-    2. MatchingEngine'i doğru sırayla çağırmak
-    3. DetectionPrediction nesnelerini toplamak
-    4. BenchmarkPredictions döndürmek
-
-Kullanım:
-    from benchmark.loader import load_validation_dataset
-    from benchmark.runner import BenchmarkRunner
+Kullanim::
 
     dataset = load_validation_dataset("Validation")
-    engine = SomeMatchingEngine()  # MatchingEngine implementasyonu
-    runner = BenchmarkRunner(engine=engine, dataset=dataset)
-    results = runner.run(config={"threshold": 0.5})
+    engine  = SomeMatchingEngine()
+    runner  = BenchmarkRunner(engine=engine, dataset=dataset)
+    results = runner.run()
     print(results.summary())
 """
 
@@ -29,6 +22,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from benchmark.data_models import ReferenceSet, ValidationDataset
@@ -44,14 +38,18 @@ logger = logging.getLogger(__name__)
 
 
 class BenchmarkRunner:
-    """Benchmark çalıştırma orkestratörü.
+    """Benchmark calistirma orkestratoru.
 
-    Dependency Injection prensibiyle çalışır: engine ve dataset
-    dışarıdan verilir, runner yalnızca akışı yönetir.
+    Dependency Injection prensibiyle calisir: engine ve dataset
+    disaridan verilir, runner yalnizca akisi yonetir.
 
-    Attributes:
-        engine: Eşleme motoru (MatchingEngine implementasyonu).
-        dataset: Yüklenmiş validation veri seti.
+    Args:
+        engine: Kullanilacak esleme motoru.
+        dataset: Uzerinde benchmark calistirilacak validation seti.
+
+    Raises:
+        TypeError: ``engine`` bir ``MatchingEngine`` instance'i degilse.
+        ValueError: ``dataset`` bossa.
     """
 
     def __init__(
@@ -59,58 +57,58 @@ class BenchmarkRunner:
         engine: MatchingEngine,
         dataset: ValidationDataset,
     ) -> None:
-        """BenchmarkRunner oluşturur.
-
-        Args:
-            engine: Kullanılacak eşleme motoru.
-            dataset: Üzerinde benchmark çalıştırılacak validation seti.
-
-        Raises:
-            TypeError: engine MatchingEngine değilse.
-            ValueError: dataset boşsa.
-        """
         if not isinstance(engine, MatchingEngine):
             raise TypeError(
-                f"engine bir MatchingEngine instance'ı olmalı, "
+                f"engine bir MatchingEngine instance'i olmali, "
                 f"verilen: {type(engine).__name__}"
             )
         if not dataset.reference_sets:
             raise ValueError(
-                "dataset boş — en az bir referans seti gerekli."
+                "dataset bos — en az bir referans seti gerekli."
             )
 
         self._engine = engine
         self._dataset = dataset
 
+    # ------------------------------------------------------------------
+    # Public properties
+    # ------------------------------------------------------------------
+
     @property
     def engine(self) -> MatchingEngine:
-        """Kullanılan eşleme motoru."""
+        """Kullanilan esleme motoru."""
         return self._engine
 
     @property
     def dataset(self) -> ValidationDataset:
-        """Üzerinde çalışılan validation seti."""
+        """Uzerinde calisilan validation seti."""
         return self._dataset
 
-    def run(
-        self, config: Optional[Dict[str, Any]] = None
-    ) -> BenchmarkPredictions:
-        """Tüm referans setleri üzerinde benchmark'ı çalıştırır.
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-        Akış:
-            1. engine.initialize(config)
-            2. Her referans seti için:
-               a. engine.set_reference(referans_görsel)
-               b. Her test görseli için engine.detect(test_görsel)
-               c. Tahminleri topla
-            3. engine.cleanup()
-            4. BenchmarkPredictions döndür
+    def run(
+        self, config: Optional[Dict[str, Any]] = None,
+    ) -> BenchmarkPredictions:
+        """Tum referans setleri uzerinde benchmark'i calistirir.
+
+        Akis::
+
+            engine.initialize(config)
+            try:
+                for ref_set in dataset:
+                    engine.set_reference(...)
+                    for image in ref_set:
+                        engine.detect(...)
+            finally:
+                engine.cleanup()
 
         Args:
-            config: Engine'e iletilecek yapılandırma parametreleri.
+            config: Engine'e iletilecek yapilandirma parametreleri.
 
         Returns:
-            Tüm setlerin tahminlerini içeren BenchmarkPredictions.
+            Tum setlerin tahminlerini iceren ``BenchmarkPredictions``.
         """
         engine_name = self._engine.name
 
@@ -123,23 +121,19 @@ class BenchmarkRunner:
 
         total_start = time.perf_counter()
 
-        # 1. Engine'i hazırla
-        logger.info("Engine hazırlaniyor: %r", engine_name)
+        # Akis: initialize -> try/finally -> cleanup
         self._engine.initialize(config)
 
-        # 2. Her set üzerinde çalıştır
         all_set_predictions: List[SetPredictions] = []
+        try:
+            for ref_set in self._dataset.reference_sets:
+                set_preds = self._run_single_set(ref_set)
+                all_set_predictions.append(set_preds)
+        finally:
+            logger.info("Engine temizleniyor: %r", engine_name)
+            self._engine.cleanup()
 
-        for ref_set in self._dataset.reference_sets:
-            set_predictions = self._run_single_set(ref_set)
-            all_set_predictions.append(set_predictions)
-
-        # 3. Engine'i temizle
-        logger.info("Engine temizleniyor: %r", engine_name)
-        self._engine.cleanup()
-
-        # 4. Sonuçları paketle
-        total_elapsed = time.perf_counter() - total_start
+        total_elapsed_ms = (time.perf_counter() - total_start) * 1000.0
 
         results = BenchmarkPredictions(
             engine_name=engine_name,
@@ -147,22 +141,26 @@ class BenchmarkRunner:
         )
 
         logger.info(
-            "Benchmark tamamlandi: %d set, %d tahmin, %.2f saniye",
+            "Benchmark tamamlandi: %d set, %d tahmin, %.1f ms",
             results.num_sets,
             results.total_predictions,
-            total_elapsed,
+            total_elapsed_ms,
         )
 
         return results
 
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
     def _run_single_set(self, ref_set: ReferenceSet) -> SetPredictions:
-        """Tek bir referans seti üzerinde engine'i çalıştırır.
+        """Tek bir referans seti uzerinde engine'i calistirir.
 
         Args:
-            ref_set: İşlenecek referans seti.
+            ref_set: Islenecek referans seti.
 
         Returns:
-            Bu setin tüm tahminlerini içeren SetPredictions.
+            Bu setin tum tahminlerini iceren ``SetPredictions``.
         """
         engine_name = self._engine.name
 
@@ -172,9 +170,7 @@ class BenchmarkRunner:
             ref_set.num_images,
         )
 
-        set_start = time.perf_counter()
-
-        # Referans görseli yükle
+        # Referans gorseli yukle
         if ref_set.reference_image_path is None:
             logger.warning(
                 "%s: Referans gorseli bulunamadi, set atlaniyor.",
@@ -182,23 +178,17 @@ class BenchmarkRunner:
             )
             return self._create_skipped_set(ref_set, engine_name)
 
-        logger.info(
-            "%s: Referans gorseli yukleniyor: %s",
-            ref_set.name,
-            ref_set.reference_image_path.name,
-        )
         self._engine.set_reference(ref_set.reference_image_path)
 
-        # Her test görseli için detect çağır
+        # Her test gorseli icin detect cagir
         predictions: List[DetectionPrediction] = []
-
         for annotation in ref_set.annotations:
-            prediction = self._detect_single_image(
-                ref_set.name, annotation.filepath, annotation.filename
+            prediction = self._detect_safe(
+                ref_set.name,
+                annotation.filepath,
+                annotation.filename,
             )
             predictions.append(prediction)
-
-        set_elapsed = time.perf_counter() - set_start
 
         set_preds = SetPredictions(
             set_name=ref_set.name,
@@ -207,77 +197,74 @@ class BenchmarkRunner:
         )
 
         logger.info(
-            "%s tamamlandi: %d tahmin "
-            "(basarili=%d, bulunamadi=%d, hata=%d) %.2f sn",
+            "%s tamamlandi: %s",
             ref_set.name,
-            set_preds.num_predictions,
-            set_preds.num_successful,
-            set_preds.num_no_match,
-            set_preds.num_errors,
-            set_elapsed,
+            set_preds.summary(),
         )
 
         return set_preds
 
-    def _detect_single_image(
+    def _detect_safe(
         self,
         set_name: str,
-        image_path: "Path",
+        image_path: Path,
         image_filename: str,
     ) -> DetectionPrediction:
-        """Tek bir test görseli için detect çağrısını güvenli şekilde yapar.
+        """Tek bir test gorseli icin detect cagrisini guvenli yapar.
 
-        Engine.detect() hata fırlatmamalıdır ama savunmacı programlama
-        olarak yakalanmayan exception'ları burada ele alıyoruz.
+        ``engine.detect()`` hata firlatmamalidir ama savunmaci
+        programlama olarak yakalanmayan exception'lari burada
+        ele aliyoruz.
 
         Args:
-            set_name: Log mesajları için set adı.
-            image_path: Test görselinin tam yolu.
-            image_filename: Test görselinin dosya adı.
+            set_name: Log mesajlari icin set adi.
+            image_path: Test gorselinin tam yolu.
+            image_filename: Test gorselinin dosya adi.
 
         Returns:
-            DetectionPrediction nesnesi.
+            ``DetectionPrediction`` nesnesi.
         """
         try:
-            prediction = self._engine.detect(image_path)
-            return prediction
-        except Exception as e:
-            logger.error(
-                "%s/%s: Engine exception: %s",
+            return self._engine.detect(image_path)
+        except Exception:
+            logger.exception(
+                "%s/%s: Engine exception yakalandi",
                 set_name,
                 image_filename,
-                e,
             )
             return DetectionPrediction(
                 image_filename=image_filename,
+                reference_set=set_name,
                 result=MatchResult.ERROR,
-                confidence=0.0,
-                error_message=f"Engine exception: {e}",
+                confidence=None,
+                processing_time_ms=0.0,
+                metadata={"error": "Unhandled engine exception"},
             )
 
     @staticmethod
     def _create_skipped_set(
-        ref_set: ReferenceSet, engine_name: str
+        ref_set: ReferenceSet, engine_name: str,
     ) -> SetPredictions:
-        """Referans görseli olmayan bir set için boş prediction oluşturur.
+        """Referans gorseli olmayan set icin ERROR prediction uretir.
 
         Args:
             ref_set: Atlanan referans seti.
-            engine_name: Algoritma adı.
+            engine_name: Algoritma adi.
 
         Returns:
-            Tüm tahminleri ERROR olan SetPredictions.
+            Tum tahminleri ``ERROR`` olan ``SetPredictions``.
         """
         predictions = [
             DetectionPrediction(
                 image_filename=ann.filename,
+                reference_set=ref_set.name,
                 result=MatchResult.ERROR,
-                confidence=0.0,
-                error_message="Referans gorseli bulunamadi.",
+                confidence=None,
+                processing_time_ms=0.0,
+                metadata={"error": "Referans gorseli bulunamadi"},
             )
             for ann in ref_set.annotations
         ]
-
         return SetPredictions(
             set_name=ref_set.name,
             engine_name=engine_name,

@@ -1,40 +1,33 @@
-"""
-benchmark.prediction_models
-============================
+"""benchmark.prediction_models — Algoritma cikti veri yapilari.
 
-Algoritma çıktısını temsil eden veri yapıları.
+Ground truth modellerinden (data_models) tamamen bagimsizdir.
+Tek ortak nokta ``BoundingBox`` sinifidir — bir kutunun koordinat
+yapisi evrenseldir ve yeniden tanimlamak gereksiz tekrara yol acar.
 
-Bu modül ground truth'tan (data_models) tamamen bağımsızdır.
-Ground truth ile tek ortak nokta BoundingBox sınıfıdır — çünkü
-bir kutunun koordinat yapısı evrenseldir ve yeniden tanımlamak
-gereksiz tekrara yol açar.
+Hiyerarsi::
 
-Hiyerarşi:
-    MatchResult          →  algoritma sonuç durumu (enum)
-    DetectionPrediction  →  tek bir görüntü için tahmin
-    SetPredictions       →  bir refXX seti için tüm tahminler
-    BenchmarkPredictions →  tüm setler için tüm tahminler
+    MatchResult          ->  algoritma sonuc durumu (enum)
+    DetectionPrediction  ->  tek bir goruntu icin tahmin
+    SetPredictions       ->  bir refXX seti icin tum tahminler
+    BenchmarkPredictions ->  tum setler icin tum tahminler
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from benchmark.data_models import BoundingBox
 
 
 class MatchResult(Enum):
-    """Eşleme algoritmasının bir test görseli için döndürdüğü sonuç durumu.
+    """Esleme algoritmasinin bir test gorseli icin dondurdugu sonuc durumu.
 
-    Üç farklı durumu açıkça ayırt eder:
-        SUCCESS  : Algoritma bir eşleşme buldu, bbox ve confidence mevcut.
-        NO_MATCH : Algoritma çalıştı ama nesneyi bulamadı.
-        ERROR    : Çalışma sırasında beklenmeyen bir hata oluştu.
-
-    Bu ayrım, gelecekte metrik hesaplamalarında "bulunamadı" ile
-    "hata" durumlarının farklı ele alınmasını sağlar.
+    Attributes:
+        SUCCESS:  Algoritma bir esleme buldu, bbox ve confidence dolu.
+        NO_MATCH: Algoritma calisti ama nesneyi bulamadi.
+        ERROR:    Calisma sirasinda beklenmeyen bir hata olustu.
     """
 
     SUCCESS = auto()
@@ -44,67 +37,69 @@ class MatchResult(Enum):
 
 @dataclass
 class DetectionPrediction:
-    """Tek bir test görseli için algoritmanın ürettiği tahmin.
+    """Tek bir test gorseli icin algoritmanin urettigi tahmin.
 
     Attributes:
-        image_filename: Test görselinin dosya adı (ör. "frame_024_00_23.jpg").
-        result: Eşleme sonucunun durumu.
-        predicted_box: Tahmin edilen bounding box (yalnızca SUCCESS durumunda).
-        confidence: Algoritmanın güven skoru [0.0, 1.0].
-                    NO_MATCH ve ERROR durumlarında 0.0 olmalıdır.
-        error_message: ERROR durumunda hata açıklaması.
+        image_filename: Test gorselinin dosya adi (or. ``frame_024_00_23.jpg``).
+        reference_set: Bu tahminin ait oldugu referans set adi (or. ``ref01``).
+        result: Esleme sonucunun durumu.
+        predicted_box: Tahmin edilen bounding box.
+            Yalnizca ``SUCCESS`` durumunda dolu olmalidir.
+        confidence: Algoritmanin guven skoru ``[0.0, 1.0]``.
+            ``NO_MATCH`` ve ``ERROR`` durumlarinda ``None`` olabilir.
+        processing_time_ms: Bu tahmin icin harcanan sure (milisaniye).
         metadata: Algoritma-spesifik ek bilgiler.
-                  Örneğin feature extraction süresi, eşleşme sayısı vb.
+            Ornegin feature extraction suresi, esleme sayisi vb.
     """
 
     image_filename: str
+    reference_set: str
     result: MatchResult
     predicted_box: Optional[BoundingBox] = None
-    confidence: float = 0.0
-    error_message: Optional[str] = None
-    metadata: Dict[str, object] = field(default_factory=dict)
+    confidence: Optional[float] = None
+    processing_time_ms: float = 0.0
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_success(self) -> bool:
-        """Tahmin başarılı mı?"""
-        return self.result == MatchResult.SUCCESS
+        """Tahmin basarili mi?"""
+        return self.result is MatchResult.SUCCESS
 
     @property
     def is_no_match(self) -> bool:
-        """Algoritma nesneyi bulamadı mı?"""
-        return self.result == MatchResult.NO_MATCH
+        """Algoritma nesneyi bulamadi mi?"""
+        return self.result is MatchResult.NO_MATCH
 
     @property
     def is_error(self) -> bool:
-        """Çalışma sırasında hata oluştu mu?"""
-        return self.result == MatchResult.ERROR
+        """Calisma sirasinda hata olustu mu?"""
+        return self.result is MatchResult.ERROR
 
     def __repr__(self) -> str:
-        if self.is_success:
-            box_repr = (
-                f"({self.predicted_box.xtl:.1f}, {self.predicted_box.ytl:.1f})"
-                f"->({self.predicted_box.xbr:.1f}, {self.predicted_box.ybr:.1f})"
-                if self.predicted_box
-                else "None"
+        parts = [
+            f"image={self.image_filename!r}",
+            f"set={self.reference_set!r}",
+            f"result={self.result.name}",
+        ]
+        if self.is_success and self.predicted_box is not None:
+            parts.append(
+                f"box=({self.predicted_box.xtl:.1f},{self.predicted_box.ytl:.1f})"
+                f"->({self.predicted_box.xbr:.1f},{self.predicted_box.ybr:.1f})"
             )
-            return (
-                f"DetectionPrediction({self.image_filename!r}, "
-                f"SUCCESS, conf={self.confidence:.3f}, box={box_repr})"
-            )
-        return (
-            f"DetectionPrediction({self.image_filename!r}, "
-            f"{self.result.name})"
-        )
+        if self.confidence is not None:
+            parts.append(f"conf={self.confidence:.3f}")
+        parts.append(f"time={self.processing_time_ms:.1f}ms")
+        return f"DetectionPrediction({', '.join(parts)})"
 
 
 @dataclass
 class SetPredictions:
-    """Bir referans seti (refXX) için tüm tahminleri tutan konteyner.
+    """Bir referans seti (refXX) icin tum tahminleri tutan konteyner.
 
     Attributes:
-        set_name: Referans set adı (ör. "ref01").
-        engine_name: Tahminleri üreten algoritmanın adı.
-        predictions: Bu setteki her test görseli için tahmin listesi.
+        set_name: Referans set adi (or. ``ref01``).
+        engine_name: Tahminleri ureten algoritmanin adi.
+        predictions: Bu setteki her test gorseli icin tahmin listesi.
     """
 
     set_name: str
@@ -113,51 +108,56 @@ class SetPredictions:
 
     @property
     def num_predictions(self) -> int:
-        """Toplam tahmin sayısı."""
+        """Toplam tahmin sayisi."""
         return len(self.predictions)
 
     @property
     def num_successful(self) -> int:
-        """Başarılı tahmin sayısı."""
+        """Basarili tahmin sayisi."""
         return sum(1 for p in self.predictions if p.is_success)
 
     @property
     def num_no_match(self) -> int:
-        """Eşleşme bulunamayan tahmin sayısı."""
+        """Esleme bulunamayan tahmin sayisi."""
         return sum(1 for p in self.predictions if p.is_no_match)
 
     @property
     def num_errors(self) -> int:
-        """Hata durumundaki tahmin sayısı."""
+        """Hata durumundaki tahmin sayisi."""
         return sum(1 for p in self.predictions if p.is_error)
 
+    @property
+    def total_processing_time_ms(self) -> float:
+        """Tum tahminler icin toplam isleme suresi (ms)."""
+        return sum(p.processing_time_ms for p in self.predictions)
+
     def summary(self) -> str:
-        """Set tahminlerinin özet istatistikleri."""
+        """Set tahminlerinin ozet istatistikleri."""
         return (
-            f"{self.set_name}: "
-            f"{self.num_predictions} tahmin "
+            f"{self.set_name}: {self.num_predictions} tahmin "
             f"(basarili={self.num_successful}, "
             f"bulunamadi={self.num_no_match}, "
-            f"hata={self.num_errors})"
+            f"hata={self.num_errors}, "
+            f"sure={self.total_processing_time_ms:.1f}ms)"
         )
 
     def __repr__(self) -> str:
         return (
             f"SetPredictions(set={self.set_name!r}, "
             f"engine={self.engine_name!r}, "
-            f"predictions={self.num_predictions})"
+            f"n={self.num_predictions})"
         )
 
 
 @dataclass
 class BenchmarkPredictions:
-    """Tüm setler icin tüm tahminleri tutan üst düzey konteyner.
+    """Tum setler icin tum tahminleri tutan ust duzey konteyner.
 
-    Bir benchmark çalıştırmasının tam çıktısıdır.
+    Bir benchmark calistirmasinin tam ciktisidir.
 
     Attributes:
-        engine_name: Tahminleri üreten algoritmanın adı.
-        set_predictions: Her referans seti için tahmin koleksiyonu.
+        engine_name: Tahminleri ureten algoritmanin adi.
+        set_predictions: Her referans seti icin tahmin koleksiyonu.
     """
 
     engine_name: str
@@ -165,27 +165,32 @@ class BenchmarkPredictions:
 
     @property
     def num_sets(self) -> int:
-        """Toplam set sayısı."""
+        """Toplam set sayisi."""
         return len(self.set_predictions)
 
     @property
     def total_predictions(self) -> int:
-        """Tüm setlerdeki toplam tahmin sayısı."""
+        """Tum setlerdeki toplam tahmin sayisi."""
         return sum(sp.num_predictions for sp in self.set_predictions)
 
     @property
     def total_successful(self) -> int:
-        """Tüm setlerdeki başarılı tahmin sayısı."""
+        """Tum setlerdeki basarili tahmin sayisi."""
         return sum(sp.num_successful for sp in self.set_predictions)
 
+    @property
+    def total_processing_time_ms(self) -> float:
+        """Tum tahminler icin toplam isleme suresi (ms)."""
+        return sum(sp.total_processing_time_ms for sp in self.set_predictions)
+
     def get_set(self, set_name: str) -> Optional[SetPredictions]:
-        """İsme göre set tahminlerini döndürür.
+        """Isme gore set tahminlerini dondurur.
 
         Args:
-            set_name: Aranacak set adı (ör. "ref01").
+            set_name: Aranacak set adi (or. ``ref01``).
 
         Returns:
-            Bulunan SetPredictions veya None.
+            Bulunan ``SetPredictions`` veya ``None``.
         """
         for sp in self.set_predictions:
             if sp.set_name == set_name:
@@ -193,12 +198,13 @@ class BenchmarkPredictions:
         return None
 
     def summary(self) -> str:
-        """Benchmark çıktısının özet istatistikleri."""
+        """Benchmark ciktisinin ozet istatistikleri."""
         lines = [
             f"BenchmarkPredictions: engine={self.engine_name!r}",
             f"  Toplam set       : {self.num_sets}",
             f"  Toplam tahmin    : {self.total_predictions}",
             f"  Basarili         : {self.total_successful}",
+            f"  Toplam sure      : {self.total_processing_time_ms:.1f}ms",
             "  -----------------------------------",
         ]
         for sp in self.set_predictions:
@@ -208,6 +214,5 @@ class BenchmarkPredictions:
     def __repr__(self) -> str:
         return (
             f"BenchmarkPredictions(engine={self.engine_name!r}, "
-            f"sets={self.num_sets}, "
-            f"predictions={self.total_predictions})"
+            f"sets={self.num_sets}, n={self.total_predictions})"
         )

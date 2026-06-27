@@ -1,13 +1,11 @@
-"""
-benchmark.engines
-==================
+"""benchmark.engines — Esleme motoru implementasyonlari.
 
-Eşleme motoru implementasyonları.
-
-Bu paket, MatchingEngine arayüzünü implemente eden somut
-algoritmaları barındırır. Her yeni algoritma bu paketin
-altına ayrı bir modül olarak eklenir.
+Bu paket, ``MatchingEngine`` arayuzunu implemente eden somut
+algoritmalari barindirir.
 
 Mevcut motorlar:
-    dummy : Pipeline doğrulama amaçlı sahte motor
+    coarse_to_fine : DINOv2 + LightGlue pipeline (iskelet)
+
+Ornek motorlar:
+    Bkz. ``benchmark.examples.dummy_engine``
 """
