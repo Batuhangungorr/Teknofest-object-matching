@@ -624,7 +624,7 @@ class GeometricVerifier(ABC):
         ytl = min(max(candidate_box.ytl, 0.0), float(img_h))
         xbr = min(max(candidate_box.xbr, 0.0), float(img_w))
         ybr = min(max(candidate_box.ybr, 0.0), float(img_h))
-        return BoundingBox(xtl=xtl, ytl=ytl, xbr=xbr, ybr=ybr)
+        return BoundingBox(label=candidate_box.label, xtl=xtl, ytl=ytl, xbr=xbr, ybr=ybr)
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(name={self.name!r})"

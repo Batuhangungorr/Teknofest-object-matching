@@ -64,6 +64,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from benchmark.data_models import BoundingBox
 from benchmark.engines.coarse_to_fine.feature_extractor import ImageFeatures
 from benchmark.engines.coarse_to_fine.localizer import CandidateRegion
 
@@ -488,7 +489,11 @@ class FineMatcher(ABC):
         """
 
     @abstractmethod
-    def set_reference(self, reference_features: ImageFeatures) -> None:
+    def set_reference(
+        self,
+        reference_features: ImageFeatures,
+        reference_bounding_box: Optional[BoundingBox] = None,
+    ) -> None:
         """Pre-compute and cache reference keypoints.
 
         Called **once per reference set**, before any ``match`` calls

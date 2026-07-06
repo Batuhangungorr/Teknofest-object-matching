@@ -46,11 +46,15 @@ Project/
 - Benchmark runner & Metrics interface
 - MatchingEngine abstraction
 - Coarse-to-Fine engine architecture
-- FeatureExtractor, CoarseLocalizer, FineMatcher abstractions
+- FeatureExtractor, CoarseLocalizer, FineMatcher, GeometricVerifier abstractions
 - Dummy engine for pipeline verification
+- DINOv2 FeatureExtractor concrete class (RGB & Thermal support)
+- CosineHeatmapLocalizer (Global Similarity & Coarse Localization)
+- AlikedLightGlueMatcher (Fine Matching with ALIKED + LightGlue)
+- RansacHomographyVerifier (Geometric Verification with OpenCV RANSAC)
 
 **In Progress / Next Task:**
-- GeometricVerifier abstraction (Only abstraction, no implementation yet)
+- Benchmark metrics integration (IoU, precision, recall) (Phase 7)
 
 ## Pipeline Overview
 

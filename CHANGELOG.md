@@ -8,11 +8,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Upcoming Work
-- Implement GeometricVerifier abstraction.
-- Integrate DINOv2 Feature Extractor.
-- Implement Coarse Heatmap Localization.
-- Integrate ALIKED + LightGlue Matcher.
-- Implement OpenCV RANSAC Verification.
 - Add IoU / Precision / Recall metrics.
 - End-to-end benchmark evaluation.
 
@@ -30,5 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Added** `FeatureExtractor` abstraction.
 - **Added** `CoarseLocalizer` abstraction.
 - **Added** `FineMatcher` abstraction.
+- **Added** `GeometricVerifier` abstraction.
+- **Added** `DINOv2FeatureExtractor` concrete class implementation.
+- **Added** `CosineHeatmapLocalizer` concrete class implementation.
+- **Added** `AlikedLightGlueMatcher` concrete class implementation (Kornia).
+- **Added** `RansacHomographyVerifier` concrete class implementation (OpenCV).
 - **Added** Dummy engine for pipeline verification.
 - **Changed** Reorganized documentation to standard structure.

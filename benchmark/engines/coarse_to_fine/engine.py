@@ -353,7 +353,7 @@ class CoarseToFineEngine(MatchingEngine):
         else:
             img_h, img_w = self._reference_features.image_size_hw
             self._reference_bounding_box = BoundingBox(
-                xtl=0.0, ytl=0.0, xbr=float(img_w), ybr=float(img_h),
+                label="fallback", xtl=0.0, ytl=0.0, xbr=float(img_w), ybr=float(img_h),
             )
             self._reference_bbox_is_fallback = True
             logger.warning(
@@ -368,7 +368,7 @@ class CoarseToFineEngine(MatchingEngine):
 
         # Let the matcher pre-compute/cache whatever it needs (e.g.
         # reference keypoints) exactly once per reference set.
-        self._fine_matcher.set_reference(self._reference_features)
+        self._fine_matcher.set_reference(self._reference_features, self._reference_bounding_box)
 
         # Best-effort reference-set identifier for DetectionPrediction.
         # BenchmarkRunner does not currently pass ref_set.name through
@@ -475,7 +475,9 @@ class CoarseToFineEngine(MatchingEngine):
         # Stage 2: coarse localization.
         # ---------------------------------------------------------
         localization_result = self._coarse_localizer.localize(
-            self._reference_features, test_features,
+            self._reference_features, 
+            test_features,
+            reference_bounding_box=self._reference_bounding_box
         )
 
         if not localization_result.has_candidates:
@@ -517,9 +519,43 @@ class CoarseToFineEngine(MatchingEngine):
                 )
 
         # No candidate survived matching + verification.
+        # Fall back to the coarse localizer's best candidate to gracefully handle extreme viewpoint changes
+        # where local keypoint matchers fail but semantic localization succeeded.
         stage, reason = self._diagnose_failure(
             last_matching_result, last_verification_result,
         )
+        
+        best_cand = localization_result.best_candidate
+        if best_cand is not None:
+            fallback_box = BoundingBox(
+                label="fallback_coarse",
+                xtl=best_cand.x_min,
+                ytl=best_cand.y_min,
+                xbr=best_cand.x_max,
+                ybr=best_cand.y_max,
+            )
+            elapsed_ms = (time.perf_counter() - start) * 1000.0
+            return DetectionPrediction(
+                image_filename=test_image_path.name,
+                reference_set=self._reference_set_name or "unknown",
+                result=MatchResult.SUCCESS,
+                predicted_box=fallback_box,
+                confidence=best_cand.confidence or 0.1,  # Lower confidence indicates it's a fallback
+                processing_time_ms=elapsed_ms,
+                metadata={
+                    "stage": "coarse_localization_fallback",
+                    "reason": reason,
+                    "candidates_evaluated": candidates_evaluated,
+                    "fallback_to_coarse": True,
+                    "reference_bbox_is_fallback": self._reference_bbox_is_fallback,
+                    "feature_extractor": self._feature_extractor.name,
+                    "coarse_localizer": self._coarse_localizer.name,
+                    "fine_matcher": self._fine_matcher.name,
+                    "geometric_verifier": self._geometric_verifier.name,
+                }
+            )
+
+        # Should be unreachable because `has_candidates` was checked above, but included for completeness.
         return self._build_no_match_prediction(
             test_image_path=test_image_path,
             start_time=start,

@@ -23,16 +23,24 @@ The architecture is built around a `BenchmarkRunner` that orchestrates `Matching
 - FeatureExtractor abstraction
 - CoarseLocalizer abstraction
 - FineMatcher abstraction
+- GeometricVerifier abstraction
 - Dummy engine for pipeline verification
+- DINOv2 FeatureExtractor concrete class
+- CosineHeatmapLocalizer (Global Similarity & Coarse Localization)
+
+- AlikedLightGlueMatcher (Fine Matching with ALIKED + LightGlue)
+- RansacHomographyVerifier (Geometric Verification with OpenCV RANSAC)
+- MetricsCalculator (IoU, precision, recall)
+- Evaluation Script (RGB + Thermal Validation)
 
 ## Modules in Progress
 
-- GeometricVerifier abstraction
+- Performance Optimization (ONNX / TensorRT)
 
 ## Next Implementation Target
 
-Implement `GeometricVerifier` abstraction.
-**Constraint**: Only abstraction. No neural network code or implementation yet.
+Implement Performance Optimization (Phase 9).
+**Constraint**: Convert the models to ONNX or TensorRT to reduce latency and increase throughput for real-time constraints.
 
 ## Current Benchmark State
 

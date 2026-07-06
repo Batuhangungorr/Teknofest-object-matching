@@ -387,6 +387,7 @@ class CoarseLocalizer(ABC):
         self,
         reference_features: ImageFeatures,
         test_features: ImageFeatures,
+        reference_bounding_box: Optional[Any] = None,
     ) -> LocalizationResult:
         """Estimate candidate regions in the test image.
 
@@ -438,6 +439,8 @@ class CoarseLocalizer(ABC):
             test_features:
                 ``ImageFeatures`` extracted from the current test
                 image.
+            reference_bounding_box:
+                The bounding box of the reference object, if available.
 
         Returns:
             ``LocalizationResult`` with zero or more candidates.

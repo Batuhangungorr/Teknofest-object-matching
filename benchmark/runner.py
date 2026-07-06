@@ -25,7 +25,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from benchmark.data_models import ReferenceSet, ValidationDataset
+from benchmark.data_models import (
+    ReferenceSet,
+    ValidationDataset,
+)
 from benchmark.engine import MatchingEngine
 from benchmark.prediction_models import (
     BenchmarkPredictions,
@@ -46,6 +49,7 @@ class BenchmarkRunner:
     Args:
         engine: Kullanilacak esleme motoru.
         dataset: Uzerinde benchmark calistirilacak validation seti.
+        sequential_tracking: If True, updates the reference image dynamically.
 
     Raises:
         TypeError: ``engine`` bir ``MatchingEngine`` instance'i degilse.
@@ -56,6 +60,7 @@ class BenchmarkRunner:
         self,
         engine: MatchingEngine,
         dataset: ValidationDataset,
+        sequential_tracking: bool = False,
     ) -> None:
         if not isinstance(engine, MatchingEngine):
             raise TypeError(
@@ -69,6 +74,7 @@ class BenchmarkRunner:
 
         self._engine = engine
         self._dataset = dataset
+        self._sequential_tracking = sequential_tracking
 
     # ------------------------------------------------------------------
     # Public properties
@@ -171,24 +177,59 @@ class BenchmarkRunner:
         )
 
         # Referans gorseli yukle
-        if ref_set.reference_image_path is None:
-            logger.warning(
-                "%s: Referans gorseli bulunamadi, set atlaniyor.",
+        if self._sequential_tracking and ref_set.annotations:
+            # For sequential tracking, initialize with the GT box of the first frame that exists
+            test_annotations = []
+            first_ann = None
+            for ann in ref_set.annotations:
+                if first_ann is None and ann.filepath.exists():
+                    first_ann = ann
+                if ann.filepath.exists():
+                    test_annotations.append(ann)
+                else:
+                    logger.warning("%s: Dosya bulunamadi, atlaniyor: %s", ref_set.name, ann.filepath)
+                    
+            if first_ann is not None:
+                self._engine.set_reference(first_ann.filepath, first_ann.boxes[0])
+            else:
+                logger.warning("%s: Gecerli referans bulunamadi.", ref_set.name)
+                return self._create_skipped_set(ref_set, engine_name)
+            
+            logger.info(
+                "%s: Sequential tracking initialized with first frame GT box.",
                 ref_set.name,
             )
-            return self._create_skipped_set(ref_set, engine_name)
+        else:
+            if ref_set.reference_image_path is None:
+                logger.warning(
+                    "%s: Referans gorseli bulunamadi, set atlaniyor.",
+                    ref_set.name,
+                )
+                return self._create_skipped_set(ref_set, engine_name)
 
-        self._engine.set_reference(ref_set.reference_image_path)
+            self._engine.set_reference(ref_set.reference_image_path)
+            test_annotations = ref_set.annotations
 
         # Her test gorseli icin detect cagir
         predictions: List[DetectionPrediction] = []
-        for annotation in ref_set.annotations:
+        for annotation in test_annotations:
             prediction = self._detect_safe(
                 ref_set.name,
                 annotation.filepath,
                 annotation.filename,
             )
             predictions.append(prediction)
+            
+            if self._sequential_tracking and prediction.result == MatchResult.SUCCESS:
+                # Do not update the template if the match was a fallback to the coarse localizer,
+                # as this means no fine correspondences were found, and we would just accumulate drift.
+                is_fallback = prediction.metadata.get('fallback_to_coarse', False)
+                if not is_fallback:
+                    # Update the template dynamically for the next frame
+                    self._engine.set_reference(
+                        annotation.filepath,
+                        prediction.predicted_box
+                    )
 
         set_preds = SetPredictions(
             set_name=ref_set.name,
